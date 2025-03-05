@@ -1,0 +1,15 @@
+{
+    "default": {
+      "voice": "alloy",
+      "instructions": "You are a friendly voice assistant.",
+      "turn_detection": { "type": "server_vad" },
+      "input_audio_format": "pcm16",
+      "output_audio_format": "pcm16",
+      "input_audio_transcription": { "model": "whisper-1" },
+      "temperature": 0.8,
+      "tool_choice": "auto",
+      "tools": [],
+      "max_response_output_tokens": "inf"
+    }
+  }
+  
