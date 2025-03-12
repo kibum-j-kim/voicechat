@@ -227,7 +227,7 @@ function App() {
 
   return (
     <div className="app-container">
-      <h1>Voice + PDF Q&A</h1>
+      <h1>Voicechat</h1>
       <p>Status: {statusMessage}</p>
 
       <div className="controls">
@@ -255,10 +255,10 @@ function App() {
       </div>
 
       {/* Debug area for PDF context */}
-      <div className="pdf-debug">
+      {/* <div className="pdf-debug">
         <h3>PDF Context (Debug)</h3>
         <pre>{pdfContextDebug}</pre>
-      </div>
+      </div> */}
 
       <div className="message-controls">
         <textarea
