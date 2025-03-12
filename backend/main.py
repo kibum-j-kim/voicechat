@@ -40,13 +40,27 @@ def get_session():
         "OpenAI-Beta": "realtime=v1"
     }
     body = {
-        "model": "gpt-4o-realtime-preview-2024-12-17",
-        "modalities": ["audio", "text"],
-        "instructions": "You are a friendly voice assistant. Respond with both voice and text.",
-        "voice": "alloy",
-        "input_audio_format": "pcm16",
-        "output_audio_format": "pcm16"
+    "model": "gpt-4o-realtime-preview-2024-12-17",
+    "modalities": ["audio", "text"],
+    "instructions": "You are a friendly voice assistant. Respond with both voice and text.",
+    "voice": "ballad",
+    "input_audio_format": "pcm16",
+    "output_audio_format": "pcm16",
+    # Must be an object specifying a recognized model
+    "input_audio_transcription": {
+        "model": "whisper-1"
+    },
+    # Configure server VAD so the server will automatically commit user audio
+    "turn_detection": {
+        "type": "server_vad",
+        "threshold": 0.5,
+        "prefix_padding_ms": 300,
+        "silence_duration_ms": 200,
+        "create_response": True,
+        "interrupt_response": True
     }
+}
+
     resp = requests.post(url, headers=headers, json=body)
     resp.raise_for_status()
     session_data = resp.json()
