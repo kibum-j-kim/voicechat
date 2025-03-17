@@ -198,7 +198,7 @@ function App() {
       response: {
         modalities: ["audio","text"],
         instructions: `You are helpful cheerful assistant who speaks in layman terms as if you are speaking to a highschooler. You have context from PDF:\n${pdfContext}\nAnswer using that info directly x -> y. if you don't know say you don't know.\nUser said: ${userQuery}`,
-        voice: "ballad",
+        voice: "ash",
         output_audio_format: "pcm16",
         temperature: 0.8,
         max_output_tokens: 800
