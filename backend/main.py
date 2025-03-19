@@ -2,6 +2,8 @@ import os
 import logging
 import requests
 import PyPDF2
+import json
+import hashlib
 from typing import List, Dict
 import numpy as np
 
@@ -14,7 +16,7 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -28,26 +30,51 @@ logging.basicConfig(level=logging.INFO)
 
 CHUNK_EMBEDDINGS = []
 
-@app.on_event("startup")
-def load_pdf_and_embed():
+# Persistent cache file for embeddings
+CACHE_FILE = "embedding_cache.json"
+embedding_cache = {}
+
+if os.path.exists(CACHE_FILE):
+    with open(CACHE_FILE, "r") as f:
+        embedding_cache = json.load(f)
+
+def get_text_hash(txt: str) -> str:
+    """Generate a unique hash for the given text."""
+    return hashlib.sha256(txt.encode("utf-8")).hexdigest()
+
+def create_embedding(txt: str) -> List[float]:
     """
-    1) Load PDF from disk
-    2) Extract text
-    3) Chunk into manageable pieces
-    4) Create embeddings for each chunk
+    Use the standard embeddings endpoint (text-embedding-ada-002) to embed text.
     """
-    pdf_path = "pdf/Navajas.pdf"
-    logging.info(f"Loading PDF from: {pdf_path}")
+    url = "https://api.openai.com/v1/embeddings"
+    headers = {
+        "Authorization": f"Bearer {OPENAI_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    body = {
+        "model": "text-embedding-ada-002",
+        "input": txt
+    }
+    r = requests.post(url, headers=headers, json=body)
+    r.raise_for_status()
+    data = r.json()
+    return data["data"][0]["embedding"]
 
-    text = extract_text_from_pdf(pdf_path)
-    chunks = chunk_text(text, 5000)
-    logging.info(f"Extracted PDF text. Created {len(chunks)} chunks. Embedding them now...")
-
-    for c in chunks:
-        emb = create_embedding(c)
-        CHUNK_EMBEDDINGS.append({"content": c, "embedding": emb})
-
-    logging.info("All PDF chunks embedded successfully.")
+def cached_create_embedding(txt: str) -> List[float]:
+    """
+    Check if the embedding exists in the persistent cache; if not, create it and update the cache.
+    """
+    key = get_text_hash(txt)
+    if key in embedding_cache:
+        logging.info("Cache hit for text.")
+        return embedding_cache[key]
+    
+    logging.info("Cache miss for text. Creating new embedding.")
+    emb = create_embedding(txt)
+    embedding_cache[key] = emb
+    with open(CACHE_FILE, "w") as f:
+        json.dump(embedding_cache, f)
+    return emb
 
 def extract_text_from_pdf(pdf_path: str) -> str:
     text = ""
@@ -71,24 +98,6 @@ def chunk_text(text: str, max_len: int) -> List[str]:
         output.append(current.strip())
     return output
 
-def create_embedding(txt: str) -> List[float]:
-    """
-    Use the standard embeddings endpoint to embed text (text-embedding-ada-002).
-    """
-    url = "https://api.openai.com/v1/embeddings"
-    headers = {
-        "Authorization": f"Bearer {OPENAI_API_KEY}",
-        "Content-Type": "application/json"
-    }
-    body = {
-        "model": "text-embedding-ada-002",
-        "input": txt
-    }
-    r = requests.post(url, headers=headers, json=body)
-    r.raise_for_status()
-    data = r.json()
-    return data["data"][0]["embedding"]
-
 def cosine_similarity(a: List[float], b: List[float]) -> float:
     a_np = np.array(a)
     b_np = np.array(b)
@@ -101,11 +110,11 @@ def cosine_similarity(a: List[float], b: List[float]) -> float:
 
 def find_top_chunks(query: str, top_k=3) -> List[str]:
     """
-    1) Create embedding for query
-    2) Compare to each chunk embedding
-    3) Return top_k chunk content
+    1) Create embedding for the query.
+    2) Compare against each PDF chunk embedding.
+    3) Return the top_k chunks.
     """
-    query_emb = create_embedding(query)
+    query_emb = cached_create_embedding(query)
     scored = []
     for ce in CHUNK_EMBEDDINGS:
         sim = cosine_similarity(query_emb, ce["embedding"])
@@ -113,17 +122,39 @@ def find_top_chunks(query: str, top_k=3) -> List[str]:
     scored.sort(key=lambda x: x[1], reverse=True)
     return [s[0] for s in scored[:top_k]]
 
+@app.on_event("startup")
+def load_pdf_and_embed():
+    """
+    Startup event that:
+    1) Loads the PDF.
+    2) Extracts the text.
+    3) Chunks the text.
+    4) Creates (or loads cached) embeddings for each chunk.
+    """
+    pdf_path = "pdf/Navajas.pdf"
+    logging.info(f"Loading PDF from: {pdf_path}")
+
+    text = extract_text_from_pdf(pdf_path)
+    chunks = chunk_text(text, 5000)
+    logging.info(f"Extracted PDF text. Created {len(chunks)} chunks. Embedding them now...")
+
+    for c in chunks:
+        emb = cached_create_embedding(c)
+        CHUNK_EMBEDDINGS.append({"content": c, "embedding": emb})
+
+    logging.info("All PDF chunks embedded successfully.")
+
 @app.get("/chunks")
 def chunks_endpoint(q: str = Query(...)):
-    """Return top relevant PDF chunks."""
+    """Return top relevant PDF chunks based on query."""
     top = find_top_chunks(q)
     return {"chunks": top}
 
 @app.get("/session")
 def get_session():
     """
-    Create ephemeral realtime session with no auto-response
-    so we can do chunk retrieval first, then do response.create.
+    Create an ephemeral realtime session for retrieving responses,
+    with no auto-response so that we can do chunk retrieval first.
     """
     url = "https://api.openai.com/v1/realtime/sessions"
     headers = {
@@ -133,7 +164,7 @@ def get_session():
     }
     body = {
         "model": "gpt-4o-realtime-preview-2024-12-17",
-        "modalities": ["audio","text"],
+        "modalities": ["audio", "text"],
         "instructions": "You are a friendly voice assistant that references PDF context when asked.",
         "voice": "ash",
         "input_audio_format": "pcm16",
