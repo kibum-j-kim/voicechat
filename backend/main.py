@@ -131,7 +131,7 @@ def load_pdf_and_embed():
     3) Chunks the text.
     4) Creates (or loads cached) embeddings for each chunk.
     """
-    pdf_path = "pdf/Navajas.pdf"
+    pdf_path = "pdf/Pennefather.pdf"
     logging.info(f"Loading PDF from: {pdf_path}")
 
     text = extract_text_from_pdf(pdf_path)
